@@ -1,48 +1,40 @@
-from typing import Union
-from pydantic import BaseModel
+from __future__ import annotations
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+
+from app import models  # noqa: F401
+from app.api.routes import auth, dummy, files, users
+from app.core.config import settings
+from app.db.base import Base
+from app.db.session import engine
 
 
-app = FastAPI()
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.project_name)
 
-# Not safe! Add your own allowed domains
-origins = [
-    "*",
-]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app.include_router(auth.router, prefix=settings.api_prefix)
+    app.include_router(users.router, prefix=settings.api_prefix)
+    app.include_router(files.router, prefix=settings.api_prefix)
+    app.include_router(dummy.router, prefix=settings.api_prefix)
 
-# Define what you will receiving in request
+    @app.on_event("startup")
+    def _create_tables() -> None:
+        Base.metadata.create_all(bind=engine)
 
+    @app.get("/")
+    async def healthcheck() -> dict[str, str]:
+        return {"status": "ok", "app": settings.project_name}
 
-class TypePayload(BaseModel):
-    content: str
-
-
-# Example GET route for app
-
-
-@app.get("/")
-def read_root():
-    return {"Message": "Hello World! FastAPI is working."}
+    return app
 
 
-# Example POST route for app
-
-
-@app.post("/getdata")
-async def create_secret(payload: TypePayload):
-    with open("output_file.txt", "a") as f:
-        now = datetime.now()
-        formatted_date = now.strftime("%B %d, %Y at %I:%M %p")
-        f.write(formatted_date + ": " + payload.content)
-        f.write("\n")
-    return payload.content
+app = create_app()
